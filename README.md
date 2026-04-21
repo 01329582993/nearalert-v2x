@@ -1,3 +1,4 @@
+<img width="1291" height="898" alt="demo" src="https://github.com/user-attachments/assets/5b729d01-105b-401f-ac8f-5a4fb1491626" />
 NearAlert is a lightweight Vehicle-to-Everything (V2X) collision avoidance 
 system designed for low-cost, infrastructure-free deployment on rickshaws, 
 CNGs, and motorcycles in dense urban environments like Dhaka, Bangladesh.
