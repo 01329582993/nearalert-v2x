@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NearAlert — V2X Collision Simulation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+
+  :root {
+    --bg:        #0a0e14;
+    --panel:     #0f1520;
+    --border:    #1e2d45;
+    --accent:    #00c8ff;
+    --warn:      #ff6b35;
+    --safe:      #00e676;
+    --danger:    #ff1744;
+    --muted:     #4a6080;
+    --text:      #c8d8e8;
+    --font-mono: 'Share Tech Mono', monospace;
+    --font-ui:   'Rajdhani', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+  .logo {
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    color: var(--accent);
+    letter-spacing: 2px;
+  }
+  .logo span { color: var(--warn); }
+  .controls { display: flex; gap: 10px; align-items: center; }
+  button {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+    padding: 6px 16px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.15s;
+  }
+  button:hover { background: var(--accent); color: var(--bg); }
+  button.danger { border-color: var(--warn); color: var(--warn); }
+  button.danger:hover { background: var(--warn); color: #fff; }
+  .speed-wrap { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); }
+  input[type=range] { accent-color: var(--accent); width: 80px; }
+
+  /* ── Main layout ── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Canvas area ── */
+  .canvas-wrap {
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* Overlay HUD */
+  .hud {
+    position: absolute;
+    top: 12px; left: 12px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    line-height: 1.7;
+    pointer-events: none;
+  }
+  .hud .val { color: var(--accent); }
+
+  .alert-banner {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(255,23,68,0.18);
+    border-top: 2px solid var(--danger);
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    padding: 6px 14px;
+    display: none;
+    letter-spacing: 1px;
+  }
+  .alert-banner.show { display: block; }
+
+  /* ── Right panel ── */
+  .side {
+    border-left: 1px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-title {
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 10px 14px 6px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono);
+  }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-cell {
+    background: var(--panel);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .stat-label { font-size: 0.65rem; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; font-family: var(--font-mono); }
+  .stat-val { font-size: 1.3rem; font-weight: 700; color: var(--accent); font-family: var(--font-mono); }
+  .stat-val.warn  { color: var(--warn); }
+  .stat-val.safe  { color: var(--safe); }
+  .stat-val.danger{ color: var(--danger); }
+
+  /* Chart canvases */
+  .charts { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .chart-block { flex: 1; padding: 8px 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+  .chart-block:last-child { border-bottom: none; }
+  .chart-label { font-size: 0.65rem; color: var(--muted); letter-spacing: 1px; font-family: var(--font-mono); margin-bottom: 4px; }
+  .chart-block canvas { flex: 1; min-height: 0; }
+
+  /* Event log */
+  .log-wrap {
+    height: 110px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    padding: 4px 10px;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    line-height: 1.8;
+    flex-shrink: 0;
+  }
+  .log-wrap::-webkit-scrollbar { width: 4px; }
+  .log-wrap::-webkit-scrollbar-track { background: var(--panel); }
+  .log-wrap::-webkit-scrollbar-thumb { background: var(--border); }
+  .log-entry { color: var(--muted); }
+  .log-entry.ev-warn  { color: var(--warn); }
+  .log-entry.ev-col   { color: var(--danger); }
+  .log-entry.ev-safe  { color: var(--safe); }
+  .log-entry.ev-pkt   { color: #5588aa; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">NEAR<span>ALERT</span> // V2X Collision Simulation</div>
+  <div class="controls">
+    <div class="speed-wrap">
+      SPEED
+      <input type="range" id="speedSlider" min="0.2" max="3" step="0.1" value="1"/>
+      <span id="speedVal">1.0x</span>
+    </div>
+    <button id="btnAdd">+ Add Vehicle</button>
+    <button id="btnPause">⏸ Pause</button>
+    <button class="danger" id="btnReset">↺ Reset</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- Left: animated city canvas -->
+  <div class="canvas-wrap">
+    <canvas id="cityCanvas"></canvas>
+    <div class="hud">
+      <div>NODES ACTIVE : <span class="val" id="hudNodes">0</span></div>
+      <div>BEACONS/S    : <span class="val" id="hudBps">0</span></div>
+      <div>CHANNEL LOAD : <span class="val" id="hudCh">0%</span></div>
+      <div>SIM TIME     : <span class="val" id="hudTime">00:00</span></div>
+    </div>
+    <div class="alert-banner" id="alertBanner">⚠ COLLISION ALERT — TTC &lt; 3s DETECTED</div>
+  </div>
+
+  <!-- Right: stats + graphs -->
+  <div class="side">
+    <div class="panel-title">// live telemetry</div>
+    <div class="stats-grid">
+      <div class="stat-cell">
+        <div class="stat-label">Warnings fired</div>
+        <div class="stat-val warn" id="sWarn">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Collisions avoided</div>
+        <div class="stat-val safe" id="sAvoid">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Pkt delivery ratio</div>
+        <div class="stat-val" id="sPdr">—</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Avg latency (ms)</div>
+        <div class="stat-val" id="sLat">—</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">False positives</div>
+        <div class="stat-val" id="sFp">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">Active alerts</div>
+        <div class="stat-val danger" id="sActive">0</div>
+      </div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-block">
+        <div class="chart-label">PACKET DELIVERY RATIO  (%)</div>
+        <canvas id="chartPdr"></canvas>
+      </div>
+      <div class="chart-block">
+        <div class="chart-label">WARNING EVENTS / 5s WINDOW</div>
+        <canvas id="chartWarn"></canvas>
+      </div>
+      <div class="chart-block">
+        <div class="chart-label">AVG BEACON LATENCY  (ms)</div>
+        <canvas id="chartLat"></canvas>
+      </div>
+    </div>
+
+    <div class="panel-title" style="border-top:1px solid var(--border)">// event log</div>
+    <div class="log-wrap" id="logWrap"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  NearAlert Simulation Core
+// ─────────────────────────────────────────────
+
+const CITY   = document.getElementById('cityCanvas');
+const CTX    = CITY.getContext('2d');
+const CHARTS = {
+  pdr:  document.getElementById('chartPdr').getContext('2d'),
+  warn: document.getElementById('chartWarn').getContext('2d'),
+  lat:  document.getElementById('chartLat').getContext('2d'),
+};
+
+// ── Config ──────────────────────────────────
+const CFG = {
+  beaconHz:    5,        // beacons per second per node
+  radioRange:  120,      // pixels
+  ttcThresh:   3.0,      // seconds
+  minSep:      18,       // pixels (collision zone)
+  packetLoss:  0.08,     // 8% base loss
+  jitterMs:    [5,40],   // latency range ms
+  maxNodes:    12,
+  histLen:     60,       // chart history points
+};
+
+// ── State ────────────────────────────────────
+let nodes      = [];
+let alerts     = new Map();  // nodeId -> {partner, ttc}
+let stats      = { warnings:0, avoided:0, fp:0, totalPkt:0, delivPkt:0 };
+let simTime    = 0;          // ms
+let paused     = false;
+let simSpeed   = 1.0;
+let lastTs     = null;
+let nodeIdSeq  = 0;
+let beaconAcc  = 0;          // accumulator for beacon timing
+let chartData  = { pdr:[], warn:[], lat:[] };
+let warnWindow = 0;          // warnings in current 5s window
+let warnWinAcc = 0;
+let latSamples = [];
+
+// ── Road layout ─────────────────────────────
+let roads = [];   // built on first resize
+
+function buildRoads(W, H) {
+  roads = [
+    // Horizontal
+    { x1:0, y1:H*0.28, x2:W, y2:H*0.28, dir:'h' },
+    { x1:0, y1:H*0.55, x2:W, y2:H*0.55, dir:'h' },
+    { x1:0, y1:H*0.80, x2:W, y2:H*0.80, dir:'h' },
+    // Vertical
+    { x1:W*0.22, y1:0, x2:W*0.22, y2:H, dir:'v' },
+    { x1:W*0.50, y1:0, x2:W*0.50, y2:H, dir:'v' },
+    { x1:W*0.78, y1:0, x2:W*0.78, y2:H, dir:'v' },
+  ];
+}
+
+// ── Vehicle types ────────────────────────────
+const VTYPES = [
+  { name:'Rickshaw',   color:'#00c8ff', speed:1.4, radius:6,  icon:'🛺' },
+  { name:'CNG',        color:'#00e676', speed:2.2, radius:7,  icon:'🚖' },
+  { name:'Motorcycle', color:'#ffeb3b', speed:3.0, radius:5,  icon:'🏍' },
+  { name:'Bus',        color:'#ff6b35', speed:1.8, radius:9,  icon:'🚌' },
+];
+
+function spawnNode(W, H) {
+  if (nodes.length >= CFG.maxNodes) return;
+  const vt  = VTYPES[Math.floor(Math.random() * VTYPES.length)];
+  const road = roads[Math.floor(Math.random() * roads.length)];
+  let x, y, vx, vy;
+  const spd = (vt.speed + Math.random() * 0.8 - 0.4) * 40; // px/s
+  if (road.dir === 'h') {
+    y  = road.y1;
+    const goRight = Math.random() > 0.5;
+    x  = goRight ? -20 : W + 20;
+    vx = goRight ? spd : -spd;
+    vy = 0;
+  } else {
+    x  = road.x1;
+    const goDown = Math.random() > 0.5;
+    y  = goDown ? -20 : H + 20;
+    vx = 0;
+    vy = goDown ? spd : -spd;
+  }
+  nodes.push({
+    id: nodeIdSeq++,
+    type: vt,
+    x, y, vx, vy,
+    trail: [],
+    warning: false,
+    warnAlpha: 0,
+    beaconFlash: 0,
+    alive: true,
+  });
+}
+
+function spawnInitial(W, H) {
+  for (let i = 0; i < 6; i++) spawnNode(W, H);
+}
+
+// ── Physics ──────────────────────────────────
+function stepPhysics(dt, W, H) {
+  for (const n of nodes) {
+    n.x += n.vx * dt;
+    n.y += n.vy * dt;
+    n.trail.push({x: n.x, y: n.y});
+    if (n.trail.length > 18) n.trail.shift();
+    // Remove if off screen
+    if (n.x < -60 || n.x > W+60 || n.y < -60 || n.y > H+60) n.alive = false;
+  }
+  nodes = nodes.filter(n => n.alive);
+  // Spawn replacements
+  if (Math.random() < 0.015) spawnNode(W, H);
+}
+
+// ── Beacon + TTC logic ───────────────────────
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function ttc(a, b) {
+  // Relative position and velocity
+  const dx  = b.x - a.x,  dy  = b.y - a.y;
+  const dvx = b.vx - a.vx, dvy = b.vy - a.vy;
+  const vv  = dvx*dvx + dvy*dvy;
+  if (vv < 0.001) return Infinity;
+  const t = -(dx*dvx + dy*dvy) / vv;
+  if (t < 0) return Infinity;
+  // Minimum separation at TCA
+  const mx = dx + dvx*t, my = dy + dvy*t;
+  const minSep = Math.hypot(mx, my);
+  if (minSep > CFG.minSep * 2.5) return Infinity;
+  return t;
+}
+
+function runBeacons() {
+  let activeAlerts = 0;
+  const newAlerts = new Map();
+
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      const d = dist(a, b);
+      if (d > CFG.radioRange) continue;
+
+      // Simulate packet delivery
+      stats.totalPkt += 2;
+      const loss = CFG.packetLoss + (nodes.length > 8 ? 0.04 : 0);
+      const delivered = Math.random() > loss;
+      if (delivered) {
+        stats.delivPkt += 2;
+        const latMs = CFG.jitterMs[0] + Math.random() * (CFG.jitterMs[1] - CFG.jitterMs[0]);
+        latSamples.push(latMs);
+        if (latSamples.length > 200) latSamples.shift();
+        nodes[a.id !== undefined ? i : i].beaconFlash = 0.3;
+      }
+
+      // TTC check
+      const t = ttc(a, b);
+      if (t < CFG.ttcThresh && t > 0) {
+        const key = `${Math.min(a.id,b.id)}-${Math.max(a.id,b.id)}`;
+        const prev = alerts.get(key);
+        if (!prev) {
+          stats.warnings++;
+          warnWindow++;
+          // Was it a true positive? (they really were converging)
+          const closing = (a.vx - b.vx)*(b.x-a.x) + (a.vy - b.vy)*(b.y-a.y);
+          if (closing < 0) stats.fp++;
+          else stats.avoided++;
+          logEvent(`WARN node#${a.id}↔#${b.id} TTC=${t.toFixed(1)}s dist=${d.toFixed(0)}px`, 'ev-warn');
+        }
+        newAlerts.set(key, { ttc: t, a: i, b: j });
+        a.warning = true; b.warning = true;
+        a.warnAlpha = 1;  b.warnAlpha = 1;
+        activeAlerts++;
+      }
+    }
+  }
+
+  // Clear old alerts
+  for (const n of nodes) {
+    const stillWarn = [...newAlerts.values()].some(v => v.a === nodes.indexOf(n) || v.b === nodes.indexOf(n));
+    if (!stillWarn) n.warning = false;
+  }
+  alerts = newAlerts;
+  return activeAlerts;
+}
+
+// ── Draw ─────────────────────────────────────
+function drawCity(W, H) {
+  CTX.clearRect(0, 0, W, H);
+
+  // Background grid
+  CTX.strokeStyle = '#111820';
+  CTX.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) {
+    CTX.beginPath(); CTX.moveTo(x,0); CTX.lineTo(x,H); CTX.stroke();
+  }
+  for (let y = 0; y < H; y += 40) {
+    CTX.beginPath(); CTX.moveTo(0,y); CTX.lineTo(W,y); CTX.stroke();
+  }
+
+  // Roads
+  CTX.lineWidth = 22;
+  CTX.strokeStyle = '#131c28';
+  for (const r of roads) {
+    CTX.beginPath();
+    CTX.moveTo(r.x1, r.y1); CTX.lineTo(r.x2, r.y2);
+    CTX.stroke();
+  }
+  // Road centre lines
+  CTX.lineWidth = 1;
+  CTX.strokeStyle = '#1e3050';
+  CTX.setLineDash([8, 12]);
+  for (const r of roads) {
+    CTX.beginPath();
+    CTX.moveTo(r.x1, r.y1); CTX.lineTo(r.x2, r.y2);
+    CTX.stroke();
+  }
+  CTX.setLineDash([]);
+
+  // Intersection markers
+  const vroads = roads.filter(r=>r.dir==='v');
+  const hroads = roads.filter(r=>r.dir==='h');
+  for (const v of vroads) for (const h of hroads) {
+    CTX.beginPath();
+    CTX.arc(v.x1, h.y1, 12, 0, Math.PI*2);
+    CTX.fillStyle = '#0d1824';
+    CTX.fill();
+    CTX.strokeStyle = '#1e3050';
+    CTX.lineWidth = 1;
+    CTX.stroke();
+  }
+
+  // Radio range rings for each node
+  for (const n of nodes) {
+    const grad = CTX.createRadialGradient(n.x, n.y, 0, n.x, n.y, CFG.radioRange);
+    grad.addColorStop(0,   'rgba(0,200,255,0.03)');
+    grad.addColorStop(0.7, 'rgba(0,200,255,0.02)');
+    grad.addColorStop(1,   'rgba(0,200,255,0)');
+    CTX.beginPath();
+    CTX.arc(n.x, n.y, CFG.radioRange, 0, Math.PI*2);
+    CTX.fillStyle = grad;
+    CTX.fill();
+    CTX.beginPath();
+    CTX.arc(n.x, n.y, CFG.radioRange, 0, Math.PI*2);
+    CTX.strokeStyle = 'rgba(0,200,255,0.06)';
+    CTX.lineWidth = 1;
+    CTX.stroke();
+  }
+
+  // Alert lines between colliding pairs
+  for (const [, v] of alerts) {
+    const a = nodes[v.a], b = nodes[v.b];
+    if (!a || !b) continue;
+    const pulse = 0.4 + 0.6 * Math.abs(Math.sin(Date.now() / 200));
+    CTX.beginPath();
+    CTX.moveTo(a.x, a.y); CTX.lineTo(b.x, b.y);
+    CTX.strokeStyle = `rgba(255,23,68,${pulse * 0.8})`;
+    CTX.lineWidth = 2;
+    CTX.setLineDash([5,5]);
+    CTX.stroke();
+    CTX.setLineDash([]);
+  }
+
+  // Trails
+  for (const n of nodes) {
+    if (n.trail.length < 2) continue;
+    CTX.beginPath();
+    CTX.moveTo(n.trail[0].x, n.trail[0].y);
+    for (let i = 1; i < n.trail.length; i++) {
+      CTX.lineTo(n.trail[i].x, n.trail[i].y);
+    }
+    CTX.strokeStyle = n.type.color + '30';
+    CTX.lineWidth = 2;
+    CTX.stroke();
+  }
+
+  // Vehicles
+  for (const n of nodes) {
+    // Warning glow
+    if (n.warnAlpha > 0) {
+      const pulse = n.warnAlpha * (0.5 + 0.5*Math.abs(Math.sin(Date.now()/150)));
+      CTX.beginPath();
+      CTX.arc(n.x, n.y, n.type.radius + 12, 0, Math.PI*2);
+      CTX.fillStyle = `rgba(255,23,68,${pulse * 0.35})`;
+      CTX.fill();
+      n.warnAlpha = Math.max(0, n.warnAlpha - 0.01);
+    }
+    // Beacon flash
+    if (n.beaconFlash > 0) {
+      CTX.beginPath();
+      CTX.arc(n.x, n.y, n.type.radius + 6, 0, Math.PI*2);
+      CTX.strokeStyle = `rgba(0,200,255,${n.beaconFlash})`;
+      CTX.lineWidth = 1.5;
+      CTX.stroke();
+      n.beaconFlash = Math.max(0, n.beaconFlash - 0.04);
+    }
+    // Body
+    CTX.beginPath();
+    CTX.arc(n.x, n.y, n.type.radius, 0, Math.PI*2);
+    CTX.fillStyle = n.warning ? '#ff1744' : n.type.color;
+    CTX.fill();
+    // Direction indicator
+    const angle = Math.atan2(n.vy, n.vx);
+    CTX.beginPath();
+    CTX.moveTo(n.x, n.y);
+    CTX.lineTo(n.x + Math.cos(angle)*(n.type.radius+6), n.y + Math.sin(angle)*(n.type.radius+6));
+    CTX.strokeStyle = n.warning ? '#ff6b35' : '#fff';
+    CTX.lineWidth = 2;
+    CTX.stroke();
+    // ID label
+    CTX.fillStyle = '#fff';
+    CTX.font = `bold 9px ${getComputedStyle(document.body).getPropertyValue('--font-mono')}`;
+    CTX.textAlign = 'center';
+    CTX.fillText(`#${n.id}`, n.x, n.y - n.type.radius - 5);
+  }
+}
+
+// ── Mini charts ──────────────────────────────
+function pushChart(arr, val) {
+  arr.push(val);
+  if (arr.length > CFG.histLen) arr.shift();
+}
+
+function drawLineChart(ctx, data, color, minY, maxY) {
+  const W = ctx.canvas.clientWidth  || ctx.canvas.width;
+  const H = ctx.canvas.clientHeight || ctx.canvas.height;
+  ctx.canvas.width  = W;
+  ctx.canvas.height = H;
+
+  ctx.clearRect(0, 0, W, H);
+  // Grid
+  ctx.strokeStyle = '#1a2535';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = H * i / 4;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+
+  if (data.length < 2) return;
+  const range = maxY - minY || 1;
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, color + '80');
+  grad.addColorStop(1, color + '08');
+
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = (i / (CFG.histLen - 1)) * W;
+    const y = H - ((v - minY) / range) * H * 0.85 - H*0.07;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  const lastX = ((data.length-1)/(CFG.histLen-1))*W;
+  const lastY = H - ((data[data.length-1] - minY)/range)*H*0.85 - H*0.07;
+  ctx.lineTo(lastX, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = (i / (CFG.histLen - 1)) * W;
+    const y = H - ((v - minY) / range) * H * 0.85 - H*0.07;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // Last value dot
+  ctx.beginPath();
+  ctx.arc(lastX, lastY, 3, 0, Math.PI*2);
+  ctx.fillStyle = color; ctx.fill();
+}
+
+// ── Log ──────────────────────────────────────
+const logWrap = document.getElementById('logWrap');
+function logEvent(msg, cls='ev-pkt') {
+  const t = new Date(simTime);
+  const ts = String(Math.floor(simTime/60000)).padStart(2,'0') + ':' +
+             String(Math.floor(simTime/1000)%60).padStart(2,'0');
+  const el = document.createElement('div');
+  el.className = 'log-entry ' + cls;
+  el.textContent = `[${ts}] ${msg}`;
+  logWrap.prepend(el);
+  if (logWrap.children.length > 80) logWrap.lastChild.remove();
+}
+
+// ── HUD update ───────────────────────────────
+function updateHUD(activeAlerts) {
+  const pdr = stats.totalPkt > 0 ? (stats.delivPkt/stats.totalPkt*100).toFixed(1) : '—';
+  const avgLat = latSamples.length > 0
+    ? (latSamples.reduce((a,b)=>a+b,0)/latSamples.length).toFixed(1)
+    : '—';
+
+  document.getElementById('hudNodes').textContent = nodes.length;
+  document.getElementById('hudBps').textContent   = (nodes.length * CFG.beaconHz).toFixed(0);
+  document.getElementById('hudCh').textContent    = Math.min(99, nodes.length * CFG.beaconHz * 0.8).toFixed(0) + '%';
+  const mm = String(Math.floor(simTime/60000)).padStart(2,'0');
+  const ss = String(Math.floor(simTime/1000)%60).padStart(2,'0');
+  document.getElementById('hudTime').textContent  = `${mm}:${ss}`;
+
+  document.getElementById('sWarn').textContent  = stats.warnings;
+  document.getElementById('sAvoid').textContent = stats.avoided;
+  document.getElementById('sPdr').textContent   = pdr + (pdr !== '—' ? '%' : '');
+  document.getElementById('sLat').textContent   = avgLat;
+  document.getElementById('sFp').textContent    = stats.fp;
+  document.getElementById('sActive').textContent= activeAlerts;
+
+  const banner = document.getElementById('alertBanner');
+  if (activeAlerts > 0) banner.classList.add('show');
+  else banner.classList.remove('show');
+
+  const pdrN = parseFloat(pdr) || 0;
+  const pdrEl = document.getElementById('sPdr');
+  pdrEl.className = 'stat-val ' + (pdrN > 90 ? 'safe' : pdrN > 75 ? 'warn' : 'danger');
+}
+
+// ── Main loop ────────────────────────────────
+let chartTick = 0;
+
+function loop(ts) {
+  requestAnimationFrame(loop);
+  if (paused) return;
+
+  const W = CITY.clientWidth, H = CITY.clientHeight;
+  if (CITY.width !== W || CITY.height !== H) {
+    CITY.width = W; CITY.height = H;
+    buildRoads(W, H);
+    if (nodes.length === 0) spawnInitial(W, H);
+  }
+
+  const raw = lastTs ? ts - lastTs : 16;
+  lastTs = ts;
+  const dt = Math.min(raw, 50) / 1000 * simSpeed;
+  simTime += dt * 1000;
+
+  stepPhysics(dt, W, H);
+
+  // Beacon tick
+  beaconAcc += dt;
+  let activeAlerts = alerts.size;
+  if (beaconAcc >= 1 / CFG.beaconHz) {
+    beaconAcc = 0;
+    activeAlerts = runBeacons();
+    stats.totalPkt += nodes.length; // each node broadcasts
+    stats.delivPkt  += nodes.length * (1 - CFG.packetLoss);
+  }
+
+  // Chart updates every ~1s
+  chartTick += dt;
+  warnWinAcc += dt;
+  if (chartTick >= 1) {
+    chartTick = 0;
+    const pdr = stats.totalPkt > 0 ? stats.delivPkt/stats.totalPkt*100 : 100;
+    const lat = latSamples.length > 0
+      ? latSamples.slice(-20).reduce((a,b)=>a+b,0)/Math.min(20,latSamples.length)
+      : 15;
+    pushChart(chartData.pdr,  pdr);
+    pushChart(chartData.lat,  lat);
+  }
+  if (warnWinAcc >= 5) {
+    warnWinAcc = 0;
+    pushChart(chartData.warn, warnWindow);
+    warnWindow = 0;
+  }
+
+  drawCity(W, H);
+  drawLineChart(CHARTS.pdr,  chartData.pdr,  '#00e676', 60, 100);
+  drawLineChart(CHARTS.warn, chartData.warn, '#ff6b35',  0, 10);
+  drawLineChart(CHARTS.lat,  chartData.lat,  '#00c8ff',  0, 50);
+  updateHUD(activeAlerts);
+}
+
+// ── Controls ─────────────────────────────────
+document.getElementById('speedSlider').addEventListener('input', e => {
+  simSpeed = parseFloat(e.target.value);
+  document.getElementById('speedVal').textContent = simSpeed.toFixed(1) + 'x';
+});
+document.getElementById('btnPause').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('btnPause').textContent = paused ? '▶ Resume' : '⏸ Pause';
+});
+document.getElementById('btnAdd').addEventListener('click', () => {
+  const W = CITY.clientWidth, H = CITY.clientHeight;
+  spawnNode(W, H);
+  logEvent(`Node #${nodeIdSeq-1} (${nodes[nodes.length-1].type.name}) joined network`, 'ev-safe');
+});
+document.getElementById('btnReset').addEventListener('click', () => {
+  nodes = []; alerts = new Map();
+  stats = { warnings:0, avoided:0, fp:0, totalPkt:0, delivPkt:0 };
+  chartData = { pdr:[], warn:[], lat:[] };
+  latSamples = []; simTime = 0; warnWindow = 0;
+  logWrap.innerHTML = '';
+  const W = CITY.clientWidth, H = CITY.clientHeight;
+  buildRoads(W, H);
+  spawnInitial(W, H);
+  logEvent('Simulation reset — 6 nodes spawned', 'ev-safe');
+});
+
+// ── Boot ─────────────────────────────────────
+logEvent('NearAlert simulation initialised', 'ev-safe');
+logEvent('Waiting for first beacon cycle…', 'ev-pkt');
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
